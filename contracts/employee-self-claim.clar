@@ -15,7 +15,7 @@
   {
     salary-per-period: uint,
     last-paid-height: uint,
-    active: bool
+    active: bool,
   }
 )
 
@@ -33,33 +33,44 @@
 
 (define-read-only (get-claimable (who principal))
   (match (map-get? employees who)
-    e
-    (let (
-      (pp (var-get pay-period))
-      (bh stacks-block-height)
-      (lph (get last-paid-height e))
-      (blocks (if (>= bh lph) (- bh lph) u0))
-      (periods (if (> pp u0) (/ blocks pp) u0))
-      (amount (* periods (get salary-per-period e)))
+    e (let (
+        (pp (var-get pay-period))
+        (bh stacks-block-height)
+        (lph (get last-paid-height e))
+        (blocks (if (>= bh lph)
+          (- bh lph)
+          u0
+        ))
+        (periods (if (> pp u0)
+          (/ blocks pp)
+          u0
+        ))
+        (amount (* periods (get salary-per-period e)))
+      )
+      amount
     )
-    amount)
     u0
   )
 )
 
 (define-public (init)
   (if (is-none (var-get owner))
-    (begin (var-set owner (some tx-sender)) (ok true))
+    (begin
+      (var-set owner (some tx-sender))
+      (ok true)
+    )
     (err ERR-UNAUTHORIZED)
   )
 )
 
 (define-public (set-pay-period (blocks uint))
   (match (var-get owner)
-    o
-    (if (is-eq o tx-sender)
+    o (if (is-eq o tx-sender)
       (if (> blocks u0)
-        (begin (var-set pay-period blocks) (ok true))
+        (begin
+          (var-set pay-period blocks)
+          (ok true)
+        )
         (err ERR-INVALID-ARG)
       )
       (err ERR-UNAUTHORIZED)
@@ -68,21 +79,22 @@
   )
 )
 
-(define-public (hire-employee (employee principal) (salary uint))
+(define-public (hire-employee
+    (employee principal)
+    (salary uint)
+  )
   (match (var-get owner)
-    o
-    (if (is-eq o tx-sender)
+    o (if (is-eq o tx-sender)
       (if (> salary u0)
-        (let (
-          (inserted (map-insert employees employee
-            {
-              salary-per-period: salary,
-              last-paid-height: stacks-block-height,
-              active: true
-            }
-          ))
-        )
-        (if inserted (ok true) (err ERR-ALREADY-HIRED))
+        (let ((inserted (map-insert employees employee {
+            salary-per-period: salary,
+            last-paid-height: stacks-block-height,
+            active: true,
+          })))
+          (if inserted
+            (ok true)
+            (err ERR-ALREADY-HIRED)
+          )
         )
         (err ERR-INVALID-ARG)
       )
@@ -92,21 +104,20 @@
   )
 )
 
-(define-public (update-salary (employee principal) (salary uint))
+(define-public (update-salary
+    (employee principal)
+    (salary uint)
+  )
   (match (var-get owner)
-    o
-    (if (is-eq o tx-sender)
+    o (if (is-eq o tx-sender)
       (if (> salary u0)
         (match (map-get? employees employee)
-          e
-          (begin
-            (map-set employees employee
-              {
-                salary-per-period: salary,
-                last-paid-height: (get last-paid-height e),
-                active: (get active e)
-              }
-            )
+          e (begin
+            (map-set employees employee {
+              salary-per-period: salary,
+              last-paid-height: (get last-paid-height e),
+              active: (get active e),
+            })
             (ok true)
           )
           (err ERR-NOT-EMPLOYEE)
@@ -119,20 +130,19 @@
   )
 )
 
-(define-public (set-active (employee principal) (flag bool))
+(define-public (set-active
+    (employee principal)
+    (flag bool)
+  )
   (match (var-get owner)
-    o
-    (if (is-eq o tx-sender)
+    o (if (is-eq o tx-sender)
       (match (map-get? employees employee)
-        e
-        (begin
-          (map-set employees employee
-            {
-              salary-per-period: (get salary-per-period e),
-              last-paid-height: (get last-paid-height e),
-              active: flag
-            }
-          )
+        e (begin
+          (map-set employees employee {
+            salary-per-period: (get salary-per-period e),
+            last-paid-height: (get last-paid-height e),
+            active: flag,
+          })
           (ok true)
         )
         (err ERR-NOT-EMPLOYEE)
@@ -144,46 +154,43 @@
 )
 
 (define-public (claim)
-  (let (
-    (who tx-sender)
-  )
-  (match (map-get? employees who)
-    e
-    (if (get active e)
-      (let (
-        (pp (var-get pay-period))
-        (bh stacks-block-height)
-        (lph (get last-paid-height e))
-        (blocks (if (>= bh lph) (- bh lph) u0))
-        (periods (if (> pp u0) (/ blocks pp) u0))
-        (amount (* periods (get salary-per-period e)))
-      )
-      (if (> amount u0)
+  (let ((who tx-sender))
+    (match (map-get? employees who)
+      e (if (get active e)
         (let (
-          (new-lph (+ lph (* periods pp)))
-        )
-        (match (as-contract (stx-transfer? amount tx-sender who))
-          ok-tx
-          (begin
-            (map-set employees who
-              {
-                salary-per-period: (get salary-per-period e),
-                last-paid-height: new-lph,
-                active: (get active e)
-              }
-            )
-            (ok amount)
+            (pp (var-get pay-period))
+            (bh stacks-block-height)
+            (lph (get last-paid-height e))
+            (blocks (if (>= bh lph)
+              (- bh lph)
+              u0
+            ))
+            (periods (if (> pp u0)
+              (/ blocks pp)
+              u0
+            ))
+            (amount (* periods (get salary-per-period e)))
           )
-          err-code
-          (err ERR-INSUFFICIENT-FUNDS)
+          (if (> amount u0)
+            (let ((new-lph (+ lph (* periods pp))))
+              (match (as-contract (stx-transfer? amount tx-sender who))
+                ok-tx (begin
+                  (map-set employees who {
+                    salary-per-period: (get salary-per-period e),
+                    last-paid-height: new-lph,
+                    active: (get active e),
+                  })
+                  (ok amount)
+                )
+                err-code (err ERR-INSUFFICIENT-FUNDS)
+              )
+            )
+            (err ERR-NOTHING-TO-CLAIM)
+          )
         )
-        )
-        (err ERR-NOTHING-TO-CLAIM)
+        (err ERR-INACTIVE)
       )
-      )
-      (err ERR-INACTIVE)
+      (err ERR-NOT-EMPLOYEE)
     )
-    (err ERR-NOT-EMPLOYEE)
-  )
   )
 )

@@ -8,6 +8,8 @@
 (define-constant err-already-paid (err u106))
 (define-constant err-unauthorized (err u107))
 (define-constant err-invalid-date (err u108))
+(define-constant err-budget-not-set (err u109))
+(define-constant err-budget-exceeded (err u110))
 
 (define-data-var next-employee-id uint u1)
 (define-data-var next-payroll-id uint u1)
@@ -244,6 +246,66 @@
                     (+ (var-get total-payroll-amount) salary)
                 )
                 (ok payroll-id)
+            )
+            err-not-found
+        )
+    )
+)
+
+(define-public (process-payroll-budgeted
+        (employee-id uint)
+        (month uint)
+        (year uint)
+    )
+    (let ((payroll-id (var-get next-payroll-id)))
+        (match (get-employee employee-id)
+            employee-data (let (
+                    (salary (get salary employee-data))
+                    (wallet (get wallet employee-data))
+                    (active (get active employee-data))
+                )
+                (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+                (asserts! active err-not-found)
+                (asserts! (is-payment-due employee-id) err-payment-not-due)
+                (match (get-monthly-budget month year)
+                    budget (let ((remaining (get remaining budget)))
+                        (asserts! (>= (get-contract-balance) salary)
+                            err-insufficient-balance
+                        )
+                        (asserts! (>= remaining salary) err-budget-exceeded)
+                        (try! (as-contract (stx-transfer? salary tx-sender wallet)))
+                        (map-set employees { employee-id: employee-id }
+                            (merge employee-data { last-payment: stacks-block-height })
+                        )
+                        (map-set payroll-records { payroll-id: payroll-id } {
+                            employee-id: employee-id,
+                            amount: salary,
+                            payment-date: stacks-block-height,
+                            period-start: (get last-payment employee-data),
+                            period-end: stacks-block-height,
+                            status: "completed",
+                        })
+                        (let (
+                                (new-spent (+ (get spent budget) salary))
+                                (new-remaining (- remaining salary))
+                            )
+                            (map-set monthly-budgets {
+                                month: month,
+                                year: year,
+                            } {
+                                allocated: (get allocated budget),
+                                spent: new-spent,
+                                remaining: new-remaining,
+                            })
+                        )
+                        (var-set next-payroll-id (+ payroll-id u1))
+                        (var-set total-payroll-amount
+                            (+ (var-get total-payroll-amount) salary)
+                        )
+                        (ok payroll-id)
+                    )
+                    err-budget-not-set
+                )
             )
             err-not-found
         )
